@@ -136,7 +136,7 @@ class AquaMonitorDataset():
         self.image_dict = {}
         print("Initializing images...")
         records = self.df.to_dict(orient="records")
-        for row in tqdm(records):
+        for row in records:
             image = AquaMonitorImage(
                                     id=row["img"],
                                     imaging_run=row["imaging_run"],
@@ -174,6 +174,7 @@ class AquaMonitorDataset():
         return imagepairs
     
     def init_imaging_runs(self):
+        """Initializes ImagingRun and ImagePair dictionaries"""
         self.imaging_run_dict = {}
         self.imagepair_dict = {}
         print("Initializing imaging runs...")
@@ -208,7 +209,7 @@ class AquaMonitorDataset():
         print("Initializing individuals...")
         records = self.df.groupby("individual").first().reset_index().to_dict(orient="records")
         imaging_run_id_df = self.df.groupby("individual")["imaging_run"].unique()
-        for row in tqdm(records):
+        for row in records:
             imaging_run_ids = imaging_run_id_df[row["individual"]]
             imaging_runs = [self.imaging_run_dict[imaging_run_id] for imaging_run_id in imaging_run_ids]
             individual = Individual(id=row["individual"],
@@ -254,47 +255,57 @@ class AquaMonitorDataset():
     
     def load(self, image=None, imagepair=None, imaging_run=None, individual=None, camera=None, imagepairs=False):
         if image is not None:
-            return self._load_image(image)
+            image_object = self(image=image)
+            return {"image": self._load_image(image), "data": asdict(image_object)}
+
         if imagepair is not None:
-            imagepair = self(imagepair=imagepair)
-            image1 = imagepair.images[0]
-            image2 = imagepair.images[1]
-            return {"images": (self._load_image(image1.id),
+            imagepair_object = self(imagepair=imagepair)
+            image1 = imagepair_object.images[0]
+            image2 = imagepair_object.images[1]
+            return {"image": (self._load_image(image1.id),
                                self._load_image(image2.id)),
-                    "data": (image1, image2)}
+                    "data": (asdict(image1), asdict(image2))}
+
+        if imaging_run is not None and imagepairs:
+            imaging_run_object = self(imaging_run=imaging_run)
+            image_tuples = []
+            data_tuples = []
+            for imagepair_object in imaging_run_object.imagepairs:
+                image1 = imagepair_object.images[0]
+                image2 = imagepair_object.images[1]
+                image_tuples.append((self._load_image(image1.id), self._load_image(image2.id)))
+                data_tuples.append((asdict(image1), asdict(image2)))
+            return {"image": image_tuples, "data": data_tuples}
 
         if imaging_run is not None:
-            imaging_run = self(imaging_run=imaging_run)
-            if imagepairs:
-                image_tuples = []
-                data_tuples = []
-                for pair in imaging_run.imagepairs:
-                    image1 = pair.images[0]
-                    image2 = pair.images[1]
-                    image_tuples.append((self._load_image(image1.id), self._load_image(image2.id)))
-                    data_tuples.append((image1, image2))
-                return [{"images": images, "data": data} for images, data in zip(image_tuples, data_tuples)]
-            camera1 = []
-            camera2 = []
-            if len(imaging_run.camera1) > 0:
-                images1 = [self._load_image(image.id) for image in imaging_run.camera1]
-                data1 = [image for image in imaging_run.camera1]
-                camera1 = [{"image": image, "data": data} for image, data in zip(images1, data1)]
+            imaging_run_object = self(imaging_run=imaging_run)
+            images1 = []
+            data1 = []
+            images2 = []
+            data2 = []
+            if len(imaging_run_object.camera1) > 0:
+                images1 = [self._load_image(image.id) for image in imaging_run_object.camera1]
+                data1 = [asdict(image) for image in imaging_run_object.camera1]
 
-            if len(imaging_run.camera2) > 0:
-                images2 = [self._load_image(image.id) for image in imaging_run.camera2]
-                data2 = [image for image in imaging_run.camera2]
-                camera2 = [{"image": image, "data": data} for image, data in zip(images2, data2)]
+            if len(imaging_run_object.camera2) > 0:
+                images2 = [self._load_image(image.id) for image in imaging_run_object.camera2]
+                data2 = [asdict(image) for image in imaging_run_object.camera2]
+
             if camera == 1:
-                return camera1
+                return {"image": images1, "data": data1}
             if camera == 2:
-                return camera2
-            return camera1 + camera2
+                return {"image": images2, "data": data2}
+            return {"image": images1 + images2, "data": data1 + data2}
 
         if individual is not None:
             individual = self(individual=individual)
-            imaging_runs = [{"imaging_run": imaging_run.id,
-                             "images": self.load(imaging_run=imaging_run.id)} for imaging_run in individual.imaging_runs]
+            imaging_runs = []
+            for imaging_run_object in individual.imaging_runs:
+                imaging_run_record = self.load(imaging_run=imaging_run_object.id)
+                record = {"imaging_run": imaging_run_object.id,
+                          "image": imaging_run_record["image"],
+                          "data": imaging_run_record["data"]}
+                imaging_runs.append(record)
             return imaging_runs
     
     def show(self, image=None, imaging_run=None, individual=None, camera=None, n_rows=8, img_size=128):
