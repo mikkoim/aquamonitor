@@ -6,6 +6,48 @@ from tqdm import tqdm
 from PIL import Image, ImageOps
 from aquamonitor.utils import stack_images
 
+COLUMNS=["area",
+         "perimeter",
+         "holes",
+         "max_feret_diameter",
+         "area_holes",
+         "roi_left",
+         "roi_top",
+         "roi_right",
+         "roi_bottom",
+         "width",
+         "height",
+         "imaging_time",
+         "img",
+         "imaging_run",
+         "camera",
+         "individual",
+         "taxon",
+         "taxon_group",
+         "taxon_label",
+         "taxon_code",
+         "lake",
+         "site",
+         "sample",
+         "plate",
+         "position",
+         "dataset",
+         "year",
+         "is_bulk",
+         "has_dna",
+         "has_biomass",
+         "fold0",
+         "fold1",
+         "fold2",
+         "fold3",
+         "fold4"]
+
+REQUIRED_COLUMNS = ["img",
+                    "imaging_run",
+                    "individual",
+                    "camera"]
+
+
 @dataclass(frozen=True)
 class AquaMonitorImage:
     id: str
@@ -22,6 +64,7 @@ class AquaMonitorImage:
     width: int
     height: int
     imaging_time: datetime
+    other_data: dict = None
 
 @dataclass(frozen=True)
 class ImagePair:
@@ -59,6 +102,7 @@ class Individual:
     fold2: str
     fold3: str
     fold4: str
+    other_data: dict = None
 
 
 def show_file_list(images: list[Image.Image], nrows=8, img_size=128):
@@ -124,14 +168,51 @@ def sync_timestamps(list1, list2):
     return pairs
 
 class AquaMonitorDataset():
-    def __init__(self, df: pd.DataFrame, ds):
+    def __init__(self, df: pd.DataFrame,
+                       ds,
+                       index: dict=None,
+                       image_level_data_cols: list[str]=None,
+                       individual_level_data_cols: list[str]=None):
+        """
+        Initializes an AquaMonitorDataset object.
+
+        Args:
+            df (pd.DataFrame): DataFrame containing the AquaMonitor metadata.
+            ds: Dataset object containing the images.
+            index (dict): Dictionary mapping image IDs to indices in the Dataset.
+            image_level_data_cols (list of str): Columns to include in the AquaMonitorImage object.
+            imagepair_level_data_cols (list of str): Columns to include in the ImagePair object.
+            imaging_run_level_data_cols (list of str): Columns to include in the ImagingRun object.
+            individual_level_data_cols (list of str): Columns to include in the Individual object.
+        """
+
         self.df = df
+        for column in REQUIRED_COLUMNS:
+            if column not in df.columns:
+                raise ValueError(f"Required column '{column}' not found in DataFrame.")
+        for column in COLUMNS:
+            if column not in df.columns:
+                print(f"Column '{column}' not found in DataFrame. Adding it with NaN values.")
+                self.df = self.df.assign(**{column: np.nan})
+
         self.ds = ds
-        self.index = {f"{k}.jpg":i for i,k in enumerate(ds["__key__"])}
+        self.index = index
+        self.image_level_data_cols = image_level_data_cols
+        self.individual_level_data_cols = individual_level_data_cols
         self.init_images()
         self.init_imaging_runs()
         self.init_individuals()
 
+    
+    def _make_image_level_data(self, row):
+        if self.image_level_data_cols is not None:
+            return {k: row[k] for k in self.image_level_data_cols}
+        return None
+    
+    def _make_individual_level_data(self, row):
+        if self.individual_level_data_cols is not None:
+            return {k: row[k] for k in self.individual_level_data_cols}
+        return None
     def init_images(self):
         """Initializes the AquaMonitorImage dictionary"""
         self.image_dict = {}
@@ -152,7 +233,8 @@ class AquaMonitorDataset():
                                     roi_bottom=row["roi_bottom"],
                                     width=row["width"],
                                     height=row["height"],
-                                    imaging_time=row["imaging_time"])
+                                    imaging_time=row["imaging_time"],
+                                    other_data=self._make_image_level_data(row))
             self.image_dict[row["img"]] = image
         print(f"Done. {len(self.image_dict)} images.")
     
@@ -233,7 +315,8 @@ class AquaMonitorDataset():
                                     fold1=row["fold1"],
                                     fold2=row["fold2"],
                                     fold3=row["fold3"],
-                                    fold4=row["fold4"])
+                                    fold4=row["fold4"],
+                                    other_data=self._make_individual_level_data(row))
             self.individual_dict[row["individual"]] = individual
         print(f"Done. {len(self.individual_dict)} individuals.")
     
@@ -252,7 +335,7 @@ class AquaMonitorDataset():
         raise ValueError("Provide either image, imaging_run or individual.")
     
     def _load_image(self, image_id):
-        return self.ds[self.index[image_id]]["jpg"]
+        return self.ds[self.index[image_id]]["x"]
     
     def load(self, image=None, imagepair=None, imaging_run=None, individual=None, camera=None, imagepairs=False):
         if image is not None:
