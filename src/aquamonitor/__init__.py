@@ -2,9 +2,14 @@ from dataclasses import dataclass, asdict
 from datetime import datetime
 import numpy as np
 import pandas as pd
+import polars as pl
 from tqdm import tqdm
 from PIL import Image, ImageOps
 from aquamonitor.utils import stack_images
+from concurrent.futures import ThreadPoolExecutor
+from multiprocessing import cpu_count
+
+N_WORKERS = cpu_count() - 1
 
 COLUMNS=["area",
          "perimeter",
@@ -218,7 +223,7 @@ class AquaMonitorDataset():
         self.image_dict = {}
         print("Initializing images...")
         records = self.df.to_dict(orient="records")
-        for row in records:
+        for row in tqdm(records):
             image = AquaMonitorImage(
                                     id=row["img"],
                                     imaging_run=row["imaging_run"],
@@ -260,10 +265,13 @@ class AquaMonitorDataset():
         """Initializes ImagingRun and ImagePair dictionaries"""
         self.imaging_run_dict = {}
         self.imagepair_dict = {}
-        print("Initializing imaging runs...")
-        for imaging_run_id in tqdm(self.df.imaging_run.unique()):
+        print(f"Initializing imaging runs and syncing image pairs using {N_WORKERS} workers...")
+        df_pl = pl.from_pandas(self.df)
+        df_pl = df_pl.sort("imaging_time")
+        
+        def process_imaging_run(imaging_run_id):
             # Fetch imaging run rows
-            imaging_run_df = self.df.query(f"imaging_run == '{imaging_run_id}'").sort_values("imaging_time")
+            imaging_run_df = df_pl.filter(pl.col("imaging_run") == imaging_run_id).to_pandas()
             individual_id = imaging_run_df.individual.iloc[0]
 
             # Separate cameras
@@ -285,6 +293,10 @@ class AquaMonitorDataset():
                                      camera2=camera2_imgs,
                                      imagepairs=imagepairs)
             self.imaging_run_dict[imaging_run_id] = imaging_run
+
+        with ThreadPoolExecutor(max_workers=N_WORKERS) as executor:
+            list(tqdm(executor.map(process_imaging_run, self.df.imaging_run.unique()), total=len(self.df.imaging_run.unique())))
+        
         print(f"Done. {len(self.imaging_run_dict)} imaging_runs.")
     
     def init_individuals(self):
