@@ -13,8 +13,8 @@ def test_overall(aquamonitor_jyu_dataset, aquamonitor_jyu_metadata):
     assert len(am.imaging_runs) == len(df["imaging_run"].unique())
     assert len(am.individuals) == len(df["individual"].unique())
 
-
-def test_overall(aquamonitor_jyu_dataset, aquamonitor_jyu_metadata):
+@pytest.mark.usefixtures("aquamonitor_jyu_dataset", "aquamonitor_jyu_metadata")
+def test_overall_full(aquamonitor_jyu_dataset, aquamonitor_jyu_metadata):
     ds = aquamonitor_jyu_dataset["validation"]
     df = aquamonitor_jyu_metadata
 
@@ -28,11 +28,8 @@ def test_overall(aquamonitor_jyu_dataset, aquamonitor_jyu_metadata):
     imagepair_id = am.imagepairs[0]
     imaging_run_id = am.imaging_runs[0]
     individual_id = am.individuals[0]
-    print(am(image=image_id))
     am.load(image=image_id)
-    print(am(imagepair=imagepair_id))
     am.load(imagepair=imagepair_id)
-    print(am(imaging_run=imaging_run_id))
     am.load(individual=individual_id)[0]["image"]
     am.show(image=image_id)
     am.show(imagepair=imagepair_id)
