@@ -7,6 +7,8 @@ The dataset is available at Huggingface Datasets: https://huggingface.co/dataset
 
 The codes used to produce the dataset are in a separate repository: https://github.com/mikkoim/aquamonitor-codes. This repository contains also vast amounts of metadata related to the dataset.
 
+Baseline models and predictions are in https://huggingface.co/mikkoim/aquamonitor-baselines. These will be made more easily available in the near future.
+
 This repository contains a utility library for handling AquaMonitor sequences and metadata.
 
 # Downloading the data
